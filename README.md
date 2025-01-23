@@ -1,4 +1,4 @@
-# **Real-Time Collaborative Code Editor**
+# **UCode: Realtime Code Editor**
 
 A powerful real-time collaborative code editor built using **React**, **Firebase**, **Socket.IO**, and **Firestore**. This app allows multiple users to edit code collaboratively, supports multiple programming languages, and enables session management with customizable sharing options.
 
