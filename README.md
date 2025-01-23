@@ -99,6 +99,7 @@ A powerful real-time collaborative code editor built using **React**, **Firebase
    ```
 
 5. Start the backend server:
+   Before starting the server download the firebase service account file(json), and keep it at same level as server.js file.
    ```bash
    node server.js
    ```
