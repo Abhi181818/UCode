@@ -60,7 +60,7 @@ A powerful real-time collaborative code editor built using **React**, **Firebase
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/your-username/repo-name.git
+   git clone https://github.com/Abhi181818/UCode.git
    cd repo-name
    ```
 
