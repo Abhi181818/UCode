@@ -24,7 +24,7 @@ const Home = () => {
     const socket = useRef(null);
 
     useEffect(() => {
-        socket.current = io('https://u-code-backend.vercel.app');
+        socket.current = io('https://ucode-backend-snz6.onrender.com');
 
         socket.current.on('session-created', ({ sessionId }) => {
             setSessionId(sessionId);
