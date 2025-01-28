@@ -10,9 +10,10 @@ import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaCode, FaLanguage, FaSignOutAlt, FaUserPlus, FaCopy, FaUsers, FaTerminal } from 'react-icons/fa';
 import axios from 'axios';
+import { getInitialCode } from '../utils/templateOfLanguages';
 
 const Home = () => {
-    const [code, setCode] = useState('// Write your code here');
+    const [code, setCode] = useState(getInitialCode('javascript'));
     const [language, setLanguage] = useState('javascript');
     const [sessionId, setSessionId] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -24,7 +25,7 @@ const Home = () => {
     const socket = useRef(null);
 
     useEffect(() => {
-        socket.current = io('https://ucode-backend-snz6.onrender.com');
+        socket.current = io('https://ucode-backend-snz6.onrender.com' );
 
         socket.current.on('session-created', ({ sessionId }) => {
             setSessionId(sessionId);
@@ -46,6 +47,7 @@ const Home = () => {
         });
 
         socket.current.on('receive-code', (updatedCode) => {
+            if (updatedCode === code) return;
             setCode(updatedCode);
         });
 
@@ -79,7 +81,7 @@ const Home = () => {
     const emitCodeChange = useCallback(
         debounce((newCode) => {
             socket.current.emit('code-change', { sessionId, code: newCode });
-        }, 300),
+        }, 100),
         [sessionId]
     );
 
@@ -174,7 +176,12 @@ const Home = () => {
                 return 63; // Default to JavaScript
         }
     };
-
+    const handleLanguageChange = (e) => {
+        const newLanguage = e.target.value;
+        setLanguage(newLanguage);
+        setCode(getInitialCode(newLanguage));
+        socket.current.emit('language-change', { sessionId, language: newLanguage });
+    };
     return (
         <motion.div
             initial={{ opacity: 0 }}
@@ -209,9 +216,7 @@ const Home = () => {
                 </div>
             </motion.div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
-                {/* Left Column: Code Editor */}
                 <motion.div
                     initial={{ x: -50, opacity: 0 }}
                     animate={{ x: 0, opacity: 1 }}
@@ -228,10 +233,7 @@ const Home = () => {
                             <select
                                 id="language"
                                 value={language}
-                                onChange={(e) => {
-                                    setLanguage(e.target.value);
-                                    socket.current.emit('language-change', { sessionId, language: e.target.value });
-                                }}
+                                onChange={handleLanguageChange}
                                 className="p-1 text-sm border border-purple-300 rounded-lg bg-white"
                             >
                                 {['javascript', 'python', 'java', 'cpp', 'html', 'css'].map((lang) => (
@@ -269,6 +271,8 @@ const Home = () => {
                                 minimap: { enabled: false },
                                 scrollBeyondLastLine: false,
                                 automaticLayout: true,
+                                wordWrap: 'on',
+                                cursorBlinking: 'smooth',
                             }}
                         />
                     </motion.div>

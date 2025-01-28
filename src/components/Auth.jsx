@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -6,6 +6,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, si
 import { auth } from '../firebase';
 import { FaSpinner, FaGoogle } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 
 const Auth = () => {
     const [email, setEmail] = useState('');
@@ -13,6 +14,8 @@ const Auth = () => {
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('login');
     const navigate = useNavigate();
+
+    const { currentUser, setCurrentUser } = useContext(AuthContext);
 
     // check user logged in
     useEffect(() => {
@@ -49,7 +52,9 @@ const Auth = () => {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             toast.success('Logged in successfully!');
+            setCurrentUser(auth.currentUser);
             navigate('/home');
+
         } catch (error) {
             toast.error(error.message);
         } finally {
@@ -65,6 +70,7 @@ const Auth = () => {
         try {
             await createUserWithEmailAndPassword(auth, email, password);
             toast.success('Account created successfully!');
+            setCurrentUser(auth.currentUser);
             navigate('/home');
         } catch (error) {
             toast.error(error.message);
@@ -79,6 +85,7 @@ const Auth = () => {
             const provider = new GoogleAuthProvider();
             await signInWithPopup(auth, provider);
             toast.success('Logged in with Google successfully!');
+            setCurrentUser(auth.currentUser);
             navigate('/home');
         } catch (error) {
             toast.error(error.message);
