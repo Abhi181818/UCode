@@ -10,7 +10,7 @@ export const getInitialCode = (language) => {
         // Write your Java code here
     }
 }`;
-    case "cpp":
+    case "c++":
       return `#include <iostream>
 using namespace std;
 
@@ -18,20 +18,27 @@ int main() {
     // Write your C++ code here
     return 0;
 }`;
-    case "html":
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    <!-- Write your HTML code here -->
-</body>
-</html>`;
-    case "css":
-      return `/* Write your CSS code here */`;
+    case "ruby":
+      return "# Write your Ruby code here";
+    case "rust":
+      return `fn main() {
+    // Write your Rust code here
+}`;
+    case "c#":
+      return `using System;
+
+class Program {
+    static void Main() {
+        // Write your C# code here
+    }
+}`;
+    case "c":
+      return `#include <stdio.h>
+
+int main() {
+    // Write your C code here
+    return 0;
+}`;
     default:
       return "// Write your code here";
   }
