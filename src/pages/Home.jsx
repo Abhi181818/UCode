@@ -8,7 +8,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import debounce from 'lodash.debounce';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaCode, FaLanguage, FaSignOutAlt, FaUserPlus, FaCopy, FaUsers, FaTerminal } from 'react-icons/fa';
+import { FaCode, FaLanguage, FaSignOutAlt, FaUserPlus, FaCopy, FaUsers, FaTerminal, FaVideo } from 'react-icons/fa';
 import axios from 'axios';
 import { getInitialCode } from '../utils/templateOfLanguages';
 
@@ -21,14 +21,21 @@ const Home = () => {
     const [joinedUsers, setJoinedUsers] = useState([]);
     const [compilationResult, setCompilationResult] = useState(null);
     const [isCompiling, setIsCompiling] = useState(false);
+    const [incomingCallModal, setIncomingCallModal] = useState(false);
+    const [caller, setCaller] = useState('');
     const navigate = useNavigate();
     const socket = useRef(null);
 
     const [langArray, setLangArray] = useState(['language', 'javascript', 'python', 'java', 'c++', 'ruby', 'rust', 'c#', 'c']);
     // let langArray = ['language', 'javascript', 'python', 'java', 'cpp', 'html', 'css'];
 
+    const [isVideoCallActive, setIsVideoCallActive] = useState(false);
+    const localVideoRef = useRef(null);
+    const remoteVideoRefs = useRef({});
+    const peerConnections = useRef({});
+
     useEffect(() => {
-        socket.current = io('https://ucode-backend-snz6.onrender.com');
+        socket.current = io('http://localhost:4000');
 
         socket.current.on('session-created', ({ sessionId }) => {
             setSessionId(sessionId);
@@ -62,12 +69,41 @@ const Home = () => {
             toast.info(`You have been approved to join the session.`);
         });
 
+        socket.current.on('offer', async ({ offer, from, sessionId }) => {
+            if (!peerConnections.current[sessionId]) return;
+            await peerConnections.current[sessionId][from].setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnections.current[sessionId][from].createAnswer();
+            await peerConnections.current[sessionId][from].setLocalDescription(answer);
+            socket.current.emit('answer', { answer, to: from, sessionId });
+        });
+
+        socket.current.on('answer', async ({ answer, from, sessionId }) => {
+            if (!peerConnections.current[sessionId]) return;
+            await peerConnections.current[sessionId][from].setRemoteDescription(new RTCSessionDescription(answer));
+        });
+
+        socket.current.on('ice-candidate', async ({ candidate, from, sessionId }) => {
+            if (!peerConnections.current[sessionId]) return;
+            await peerConnections.current[sessionId][from].addIceCandidate(new RTCIceCandidate(candidate));
+        });
+
+        socket.current.on("call-invitation", ({ sessionId, caller }) => {
+            if (caller !== userEmail) {
+                setIncomingCallModal(true);
+                setCaller(caller);
+            }
+        });
+
         return () => {
             socket.current.disconnect();
+            Object.values(peerConnections.current).forEach(sessionPCs => {
+                Object.values(sessionPCs).forEach(pc => pc.close());
+            });
+            peerConnections.current = {};
         };
     }, []);
 
-    // Fetch user email from Firebase Authentication
+
     useEffect(() => {
         const authUser = auth.currentUser;
         if (authUser) {
@@ -85,7 +121,16 @@ const Home = () => {
         // console.log(langArray);
 
     }, [language]);
-    // Create or retrieve the default session for the logged-in user
+
+    useEffect(() => {
+        socket.current.on("call-invitation", ({ sessionId, caller }) => {
+            if (caller !== userEmail) {
+                setIncomingCallModal(true);
+                setCaller(caller);
+            }
+        })
+    }, []);
+
     const createOrJoinDefaultSession = (email) => {
         socket.current.emit('create-session', email);
     };
@@ -197,6 +242,61 @@ const Home = () => {
         setLanguage(newLanguage);
         setCode(getInitialCode(newLanguage));
         socket.current.emit('language-change', { sessionId, language: newLanguage });
+    };
+
+    const startVideoCall = async () => {
+        setIsVideoCallActive(true);
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideoRef.current.srcObject = stream;
+
+        if (!peerConnections.current[sessionId]) {
+            peerConnections.current[sessionId] = {};
+        }
+
+        joinedUsers.forEach(userEmail => {
+            if (userEmail === userEmail) return; // Skip self
+
+            const pc = new RTCPeerConnection();
+            peerConnections.current[sessionId][userEmail] = pc;
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.current.emit('ice-candidate', { candidate: event.candidate, to: userEmail, sessionId });
+                }
+            };
+
+            pc.ontrack = (event) => {
+                if (!remoteVideoRefs.current[sessionId]) {
+                    remoteVideoRefs.current[sessionId] = {};
+                }
+                if (!remoteVideoRefs.current[sessionId][userEmail]) {
+                    remoteVideoRefs.current[sessionId][userEmail] = React.createRef();
+                }
+                remoteVideoRefs.current[sessionId][userEmail].current.srcObject = event.streams[0];
+            };
+
+            stream.getTracks().forEach((track) => {
+                pc.addTrack(track, stream);
+            });
+
+            pc.createOffer().then(offer => {
+                pc.setLocalDescription(offer);
+                socket.current.emit('offer', { offer, to: userEmail, sessionId });
+            });
+        });
+
+        socket.current.emit('start-call', { sessionId });
+    };
+
+    const stopVideoCall = () => {
+        setIsVideoCallActive(false);
+        if (peerConnections.current[sessionId]) {
+            Object.values(peerConnections.current[sessionId]).forEach(pc => pc.close());
+            delete peerConnections.current[sessionId];
+        }
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+            localVideoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+        }
     };
 
     return (
@@ -336,6 +436,51 @@ const Home = () => {
                         </div>
                     </div>
 
+                    {/* Video Call Section */}
+                    <div className="bg-white rounded-lg shadow-md p-4">
+                        <h2 className="text-lg font-bold mb-2 flex items-center">
+                            <FaVideo className="mr-2 text-purple-600" /> Video Call
+                        </h2>
+                        <div className="flex justify-between items-center mb-4">
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={startVideoCall}
+                                className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+                                disabled={isVideoCallActive}
+                            >
+                                Start Call
+                            </motion.button>
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={stopVideoCall}
+                                className="bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 transition-colors"
+                                disabled={!isVideoCallActive}
+                            >
+                                End Call
+                            </motion.button>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <video ref={localVideoRef} autoPlay muted className="w-full h-48 bg-black rounded-lg"></video>
+                            {joinedUsers.map((email) => (
+                                email !== userEmail && (
+                                    <video
+                                        key={email}
+                                        ref={el => {
+                                            if (!remoteVideoRefs.current[sessionId]) {
+                                                remoteVideoRefs.current[sessionId] = {};
+                                            }
+                                            remoteVideoRefs.current[sessionId][email] = el;
+                                        }}
+                                        autoPlay
+                                        className="w-full h-48 bg-black rounded-lg"
+                                    ></video>
+                                )
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Join Session Section */}
                     <div className="bg-white rounded-lg shadow-md p-4">
                         <label htmlFor="join-session" className="block text-sm font-medium text-gray-700 flex items-center mb-2">
@@ -409,6 +554,44 @@ const Home = () => {
                     </div>
                 </motion.div>
             </div>
+
+            {/* Incoming Call Modal */}
+            <AnimatePresence>
+                {incomingCallModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center"
+                    >
+                        <div className="bg-white rounded-lg shadow-lg p-4 max-w-sm w-full">
+                            <h2 className="text-lg font-bold mb-2">Incoming Call</h2>
+                            <p>{caller} is calling you.</p>
+                            <div className="flex justify-between mt-4">
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => {
+                                        setIncomingCallModal(false);
+                                        startVideoCall();
+                                    }}
+                                    className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+                                >
+                                    Accept
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setIncomingCallModal(false)}
+                                    className="bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 transition-colors"
+                                >
+                                    Decline
+                                </motion.button>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };
