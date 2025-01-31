@@ -37,7 +37,7 @@ const Home = () => {
     const peerConnections = useRef({});
 
     useEffect(() => {
-        socket.current = io('http://localhost:4000');
+        socket.current = io('https://ucode-backend-snz6.onrender.com');
 
         socket.current.on('session-created', ({ sessionId }) => {
             setSessionId(sessionId);
