@@ -30,12 +30,14 @@ const Home = () => {
     // let langArray = ['language', 'javascript', 'python', 'java', 'cpp', 'html', 'css'];
 
     const [isVideoCallActive, setIsVideoCallActive] = useState(false);
+    const [streams, setStreams] = useState({});
+
     const localVideoRef = useRef(null);
     const remoteVideoRefs = useRef({});
     const peerConnections = useRef({});
 
     useEffect(() => {
-        socket.current = io('https://ucode-backend-snz6.onrender.com');
+        socket.current = io('http://localhost:4000');
 
         socket.current.on('session-created', ({ sessionId }) => {
             setSessionId(sessionId);
@@ -69,24 +71,71 @@ const Home = () => {
             toast.info(`You have been approved to join the session.`);
         });
 
-        socket.current.on('offer', async ({ offer, from, sessionId }) => {
-            if (!peerConnections.current[sessionId]) return;
-            await peerConnections.current[sessionId][from].setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await peerConnections.current[sessionId][from].createAnswer();
-            await peerConnections.current[sessionId][from].setLocalDescription(answer);
-            socket.current.emit('answer', { answer, to: from, sessionId });
+
+        socket.current.on('offer', async ({ offer, from }) => {
+            console.log('Received offer from:', from);
+            if (!peerConnections.current[from]) {
+                const pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                    ]
+                });
+
+                peerConnections.current[from] = pc;
+
+                // Add local tracks if we have them
+                if (localVideoRef.current?.srcObject) {
+                    localVideoRef.current.srcObject.getTracks().forEach(track => {
+                        pc.addTrack(track, localVideoRef.current.srcObject);
+                    });
+                }
+
+                pc.ontrack = (event) => {
+                    console.log('Received remote track from offer:', from);
+                    setStreams(prev => ({
+                        ...prev,
+                        [from]: event.streams[0]
+                    }));
+                };
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.current.emit('ice-candidate', {
+                            candidate: event.candidate,
+                            to: from,
+                            from: userEmail
+                        });
+                    }
+                };
+            }
+
+            const pc = peerConnections.current[from];
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            socket.current.emit('answer', {
+                answer,
+                to: from,
+                from: userEmail
+            });
         });
 
-        socket.current.on('answer', async ({ answer, from, sessionId }) => {
-            if (!peerConnections.current[sessionId]) return;
-            await peerConnections.current[sessionId][from].setRemoteDescription(new RTCSessionDescription(answer));
+        socket.current.on('answer', async ({ answer, from }) => {
+            console.log('Received answer from:', from);
+            const pc = peerConnections.current[from];
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            }
         });
 
-        socket.current.on('ice-candidate', async ({ candidate, from, sessionId }) => {
-            if (!peerConnections.current[sessionId]) return;
-            await peerConnections.current[sessionId][from].addIceCandidate(new RTCIceCandidate(candidate));
+        socket.current.on('ice-candidate', async ({ candidate, from }) => {
+            console.log('Received ICE candidate from:', from);
+            const pc = peerConnections.current[from];
+            if (pc) {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            }
         });
-
         socket.current.on("call-invitation", ({ sessionId, caller }) => {
             if (caller !== userEmail) {
                 setIncomingCallModal(true);
@@ -100,6 +149,10 @@ const Home = () => {
                 Object.values(sessionPCs).forEach(pc => pc.close());
             });
             peerConnections.current = {};
+            socket.current.off('offer');
+            socket.current.off('answer');
+            socket.current.off('ice-candidate');
+
         };
     }, []);
 
@@ -245,60 +298,176 @@ const Home = () => {
     };
 
     const startVideoCall = async () => {
-        setIsVideoCallActive(true);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideoRef.current.srcObject = stream;
+        try {
+            setIsVideoCallActive(true);
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideoRef.current.srcObject = stream;
 
-        if (!peerConnections.current[sessionId]) {
-            peerConnections.current[sessionId] = {};
+            // Initialize peer connections for each remote user
+            joinedUsers.forEach(async (remoteEmail) => {
+                if (remoteEmail === userEmail) return;
+
+                const pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                    ]
+                });
+
+                // Store the peer connection
+                peerConnections.current[remoteEmail] = pc;
+
+                // Add local tracks to the connection
+                stream.getTracks().forEach(track => {
+                    pc.addTrack(track, stream);
+                });
+
+                // Handle incoming tracks
+                pc.ontrack = (event) => {
+                    console.log('Received remote track from:', remoteEmail);
+                    setStreams(prev => ({
+                        ...prev,
+                        [remoteEmail]: event.streams[0]
+                    }));
+                };
+
+                // Handle and send ICE candidates
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.current.emit('ice-candidate', {
+                            candidate: event.candidate,
+                            to: remoteEmail,
+                            from: userEmail
+                        });
+                    }
+                };
+
+                // Create and send offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.current.emit('offer', {
+                    offer,
+                    to: remoteEmail,
+                    from: userEmail
+                });
+            });
+
+            socket.current.emit('start-call', { sessionId: sessionId, caller: userEmail });
+
+        } catch (err) {
+            console.error('Error starting video call:', err);
+            setIsVideoCallActive(false);
         }
+    };
 
-        joinedUsers.forEach(userEmail => {
-            if (userEmail === userEmail) return; // Skip self
+    const acceptCall = async () => {
+        try {
+            setIsVideoCallActive(true);
+            setIncomingCallModal(false);
 
-            const pc = new RTCPeerConnection();
-            peerConnections.current[sessionId][userEmail] = pc;
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideoRef.current.srcObject = stream;
+            console.log(stream)
 
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.current.emit('ice-candidate', { candidate: event.candidate, to: userEmail, sessionId });
-                }
-            };
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                ]
+            });
 
-            pc.ontrack = (event) => {
-                if (!remoteVideoRefs.current[sessionId]) {
-                    remoteVideoRefs.current[sessionId] = {};
-                }
-                if (!remoteVideoRefs.current[sessionId][userEmail]) {
-                    remoteVideoRefs.current[sessionId][userEmail] = React.createRef();
-                }
-                remoteVideoRefs.current[sessionId][userEmail].current.srcObject = event.streams[0];
-            };
+            peerConnections.current[caller] = pc;
 
-            stream.getTracks().forEach((track) => {
+            stream.getTracks().forEach(track => {
                 pc.addTrack(track, stream);
             });
 
-            pc.createOffer().then(offer => {
-                pc.setLocalDescription(offer);
-                socket.current.emit('offer', { offer, to: userEmail, sessionId });
-            });
-        });
+            pc.ontrack = (event) => {
+                console.log('Received remote track from caller:', caller);
+                setStreams(prev => ({
+                    ...prev,
+                    [caller]: event.streams[0]
+                }));
+            };
 
-        socket.current.emit('start-call', { sessionId });
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.current.emit('ice-candidate', {
+                        candidate: event.candidate,
+                        to: caller,
+                        from: userEmail
+                    });
+                }
+            };
+
+            socket.current.emit('call-accepted', { to: caller, from: userEmail });
+
+        } catch (err) {
+            console.error('Error accepting call:', err);
+            setIsVideoCallActive(false);
+            setIncomingCallModal(false);
+        }
     };
 
     const stopVideoCall = () => {
         setIsVideoCallActive(false);
-        if (peerConnections.current[sessionId]) {
-            Object.values(peerConnections.current[sessionId]).forEach(pc => pc.close());
-            delete peerConnections.current[sessionId];
-        }
-        if (localVideoRef.current && localVideoRef.current.srcObject) {
-            localVideoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-        }
-    };
 
+        // Stop all tracks in the local stream
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+            localVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
+            localVideoRef.current.srcObject = null;
+        }
+
+        // Close and cleanup all peer connections
+        Object.values(peerConnections.current).forEach(pc => {
+            pc.close();
+        });
+        peerConnections.current = {};
+
+        // Clear remote video references
+        Object.values(remoteVideoRefs.current).forEach(videoEl => {
+            if (videoEl && videoEl.srcObject) {
+                videoEl.srcObject.getTracks().forEach(track => track.stop());
+                videoEl.srcObject = null;
+            }
+        });
+        remoteVideoRefs.current = {};
+
+        socket.current.emit('end-call', { sessionId });
+    };
+    const renderVideos = () => (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Local video */}
+            <div className="relative">
+                <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-48 bg-black rounded-lg"
+                />
+                <span className="absolute bottom-2 left-2 text-white bg-black bg-opacity-50 px-2 py-1 rounded">
+                    You
+                </span>
+            </div>
+
+            {Object.entries(streams).map(([email, stream]) => (
+                <div key={email} className="relative">
+                    <video
+                        autoPlay
+                        playsInline
+                        className="w-full h-48 bg-black rounded-lg"
+                        ref={el => {
+                            if (el && el.srcObject !== stream) {
+                                el.srcObject = stream;
+                            }
+                        }}
+                    />
+                    <span className="absolute bottom-2 left-2 text-white bg-black bg-opacity-50 px-2 py-1 rounded">
+                        {email.split('@')[0]}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
     return (
         <motion.div
             initial={{ opacity: 0 }}
@@ -462,22 +631,15 @@ const Home = () => {
                             </motion.button>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <video ref={localVideoRef} autoPlay muted className="w-full h-48 bg-black rounded-lg"></video>
-                            {joinedUsers.map((email) => (
-                                email !== userEmail && (
-                                    <video
-                                        key={email}
-                                        ref={el => {
-                                            if (!remoteVideoRefs.current[sessionId]) {
-                                                remoteVideoRefs.current[sessionId] = {};
-                                            }
-                                            remoteVideoRefs.current[sessionId][email] = el;
-                                        }}
-                                        autoPlay
-                                        className="w-full h-48 bg-black rounded-lg"
-                                    ></video>
-                                )
-                            ))}
+                            <video
+                                ref={localVideoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className="w-full h-48 bg-black rounded-lg"
+                            />
+                            {isVideoCallActive && renderVideos()}
+
                         </div>
                     </div>
 
@@ -571,10 +733,7 @@ const Home = () => {
                                 <motion.button
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
-                                    onClick={() => {
-                                        setIncomingCallModal(false);
-                                        startVideoCall();
-                                    }}
+                                    onClick={acceptCall}
                                     className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
                                 >
                                     Accept
