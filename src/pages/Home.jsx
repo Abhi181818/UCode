@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaCode, FaLanguage, FaSignOutAlt, FaUserPlus, FaCopy, FaUsers, FaTerminal, FaVideo } from 'react-icons/fa';
 import axios from 'axios';
 import { getInitialCode } from '../utils/templateOfLanguages';
+import Chatbot from '../components/ChatBot';
 
 const Home = () => {
     const [code, setCode] = useState(getInitialCode('language'));
@@ -715,6 +716,7 @@ const Home = () => {
                         </AnimatePresence>
                     </div>
                 </motion.div>
+                <Chatbot/>
             </div>
 
             {/* Incoming Call Modal */}
