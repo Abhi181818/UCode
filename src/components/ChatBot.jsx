@@ -23,7 +23,7 @@ const Chatbot = () => {
         setIsLoading(true);
 
         try {
-            const response = await fetch('https://ucode-backend-snz6.onrender.com/api/chat', {
+            const response = await fetch('https://ucode.onrender.com/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
