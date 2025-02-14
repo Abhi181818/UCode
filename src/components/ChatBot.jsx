@@ -9,17 +9,19 @@ const Chatbot = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!input.trim()) return;
-
+        const trimmedInput = input.trim(); 
+    
+        if (!trimmedInput) return; 
+    
         const userMessage = {
             role: 'user',
-            content: input
+            content: trimmedInput 
         };
-
+    
         setMessages(prev => [...prev, userMessage]);
-        setInput('');
+        setInput(''); 
         setIsLoading(true);
-
+    
         try {
             const response = await fetch('https://ucode-backend-snz6.onrender.com/api/chat', {
                 method: 'POST',
@@ -27,21 +29,33 @@ const Chatbot = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: input
+                    message: trimmedInput 
                 })
             });
-
+    
+            if (!response.ok) {
+                const errorData = await response.json(); 
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`); 
+            }
+    
             const data = await response.json();
-
-            setMessages(prev => [...prev, {
-                role: 'assistant',
+    
+            if (!data.success || !data.response) { 
+                throw new Error("Invalid response from server");
+            }
+    
+            const botMessage = {
+                role: 'system',
                 content: data.response
-            }]);
+            };
+            setMessages(prev => [...prev, botMessage]);
+    
         } catch (error) {
             console.error('Error:', error);
+            const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.'; 
             setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: 'Sorry, I encountered an error. Please try again.'
+                role: 'system',
+                content: errorMessage
             }]);
         } finally {
             setIsLoading(false);
