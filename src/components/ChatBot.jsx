@@ -9,50 +9,50 @@ const Chatbot = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const trimmedInput = input.trim(); 
-    
-        if (!trimmedInput) return; 
-    
+        const trimmedInput = input.trim();
+
+        if (!trimmedInput) return;
+
         const userMessage = {
             role: 'user',
-            content: trimmedInput 
+            content: trimmedInput
         };
-    
+
         setMessages(prev => [...prev, userMessage]);
-        setInput(''); 
+        setInput('');
         setIsLoading(true);
-    
+
         try {
-            const response = await fetch('https://ucode-backend-snz6.onrender.com/api/chat', {
+            const response = await fetch('http://localhost:3000/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: trimmedInput 
+                    message: trimmedInput
                 })
             });
-    
+
             if (!response.ok) {
-                const errorData = await response.json(); 
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`); 
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
             }
-    
+
             const data = await response.json();
-    
-            if (!data.success || !data.response) { 
+
+            if (!data.success || !data.response) {
                 throw new Error("Invalid response from server");
             }
-    
+
             const botMessage = {
                 role: 'system',
                 content: data.response
             };
             setMessages(prev => [...prev, botMessage]);
-    
+
         } catch (error) {
             console.error('Error:', error);
-            const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.'; 
+            const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.';
             setMessages(prev => [...prev, {
                 role: 'system',
                 content: errorMessage
@@ -93,7 +93,11 @@ const Chatbot = () => {
                                         : 'bg-gray-100 text-gray-800'
                                         }`}
                                 >
-                                    {message.content}
+                                    <pre className='whitespace-pre-wrap'>
+                                        <code className='break-all'>
+                                            {message.content}
+                                            </code>
+                                    </pre>
                                 </div>
                             </div>
                         ))}
