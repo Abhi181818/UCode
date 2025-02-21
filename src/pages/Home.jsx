@@ -28,7 +28,6 @@ const Home = () => {
     const socket = useRef(null);
 
     const [langArray, setLangArray] = useState(['language', 'javascript', 'python', 'java', 'c++', 'ruby', 'rust', 'c#', 'c']);
-    // let langArray = ['language', 'javascript', 'python', 'java', 'cpp', 'html', 'css'];
 
     const [isVideoCallActive, setIsVideoCallActive] = useState(false);
     const [streams, setStreams] = useState({});
@@ -60,8 +59,9 @@ const Home = () => {
         });
 
         socket.current.on('receive-code', (updatedCode) => {
-            if (updatedCode === code) return;
-            setCode(updatedCode);
+            if (updatedCode !== code) {
+                setCode(updatedCode);
+            }
         });
 
         socket.current.on('update-language', (updatedLanguage) => {
@@ -71,7 +71,6 @@ const Home = () => {
         socket.current.on('request-approved', () => {
             toast.info(`You have been approved to join the session.`);
         });
-
 
         socket.current.on('offer', async ({ offer, from }) => {
             console.log('Received offer from:', from);
@@ -84,7 +83,6 @@ const Home = () => {
 
                 peerConnections.current[from] = pc;
 
-                // Add local tracks if we have them
                 if (localVideoRef.current?.srcObject) {
                     localVideoRef.current.srcObject.getTracks().forEach(track => {
                         pc.addTrack(track, localVideoRef.current.srcObject);
@@ -137,6 +135,7 @@ const Home = () => {
                 await pc.addIceCandidate(new RTCIceCandidate(candidate));
             }
         });
+
         socket.current.on("call-invitation", ({ sessionId, caller }) => {
             if (caller !== userEmail) {
                 setIncomingCallModal(true);
@@ -153,10 +152,8 @@ const Home = () => {
             socket.current.off('offer');
             socket.current.off('answer');
             socket.current.off('ice-candidate');
-
         };
     }, []);
-
 
     useEffect(() => {
         const authUser = auth.currentUser;
@@ -164,26 +161,13 @@ const Home = () => {
             setUserEmail(authUser.email);
             createOrJoinDefaultSession(authUser.email);
         }
-
     }, []);
 
     useEffect(() => {
-        if (language != 'language') {
-            setLangArray(langArray.filter((lang) => lang !== 'language'))
-            console.log(langArray);
+        if (language !== 'language') {
+            setLangArray(langArray.filter((lang) => lang !== 'language'));
         }
-        // console.log(langArray);
-
     }, [language]);
-
-    useEffect(() => {
-        socket.current.on("call-invitation", ({ sessionId, caller }) => {
-            if (caller !== userEmail) {
-                setIncomingCallModal(true);
-                setCaller(caller);
-            }
-        })
-    }, []);
 
     const createOrJoinDefaultSession = (email) => {
         socket.current.emit('create-session', email);
@@ -201,7 +185,6 @@ const Home = () => {
         emitCodeChange(newCode);
     };
 
-    // Handle logout
     const handleLogout = async () => {
         try {
             await signOut(auth);
@@ -212,7 +195,6 @@ const Home = () => {
         }
     };
 
-    // Approve a user request to join the session
     const handleApproveRequest = (email) => {
         socket.current.emit('approve-request', { sessionId, userEmail: email });
         toast.success(`Approved request for ${email}`);
@@ -271,23 +253,23 @@ const Home = () => {
     const getLanguageId = (language) => {
         switch (language) {
             case 'javascript':
-                return 63; // JavaScript language ID
+                return 63;
             case 'python':
-                return 71; // Python language ID
+                return 71;
             case 'java':
-                return 62; // Java language ID
+                return 62;
             case 'c++':
-                return 54; // C++ language ID
+                return 54;
             case 'ruby':
-                return 72; // Ruby language ID
+                return 72;
             case 'rust':
-                return 73; // Rust language ID
+                return 73;
             case 'c#':
-                return 51; // C# language ID
+                return 51;
             case 'c':
-                return 50; // C language ID
+                return 50;
             default:
-                return 63; // Default to JavaScript
+                return 63;
         }
     };
 
@@ -304,7 +286,6 @@ const Home = () => {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideoRef.current.srcObject = stream;
 
-            // Initialize peer connections for each remote user
             joinedUsers.forEach(async (remoteEmail) => {
                 if (remoteEmail === userEmail) return;
 
@@ -314,15 +295,12 @@ const Home = () => {
                     ]
                 });
 
-                // Store the peer connection
                 peerConnections.current[remoteEmail] = pc;
 
-                // Add local tracks to the connection
                 stream.getTracks().forEach(track => {
                     pc.addTrack(track, stream);
                 });
 
-                // Handle incoming tracks
                 pc.ontrack = (event) => {
                     console.log('Received remote track from:', remoteEmail);
                     setStreams(prev => ({
@@ -331,7 +309,6 @@ const Home = () => {
                     }));
                 };
 
-                // Handle and send ICE candidates
                 pc.onicecandidate = (event) => {
                     if (event.candidate) {
                         socket.current.emit('ice-candidate', {
@@ -342,7 +319,6 @@ const Home = () => {
                     }
                 };
 
-                // Create and send offer
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 socket.current.emit('offer', {
@@ -367,7 +343,6 @@ const Home = () => {
 
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideoRef.current.srcObject = stream;
-            console.log(stream)
 
             const pc = new RTCPeerConnection({
                 iceServers: [
@@ -411,19 +386,16 @@ const Home = () => {
     const stopVideoCall = () => {
         setIsVideoCallActive(false);
 
-        // Stop all tracks in the local stream
         if (localVideoRef.current && localVideoRef.current.srcObject) {
             localVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
             localVideoRef.current.srcObject = null;
         }
 
-        // Close and cleanup all peer connections
         Object.values(peerConnections.current).forEach(pc => {
             pc.close();
         });
         peerConnections.current = {};
 
-        // Clear remote video references
         Object.values(remoteVideoRefs.current).forEach(videoEl => {
             if (videoEl && videoEl.srcObject) {
                 videoEl.srcObject.getTracks().forEach(track => track.stop());
@@ -434,9 +406,9 @@ const Home = () => {
 
         socket.current.emit('end-call', { sessionId });
     };
+
     const renderVideos = () => (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Local video */}
             <div className="relative">
                 <video
                     ref={localVideoRef}
@@ -716,7 +688,7 @@ const Home = () => {
                         </AnimatePresence>
                     </div>
                 </motion.div>
-                <Chatbot/>
+                <Chatbot />
             </div>
 
             {/* Incoming Call Modal */}

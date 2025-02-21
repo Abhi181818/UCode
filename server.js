@@ -12,7 +12,13 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["POST", "GET"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 app.use(express.json());
 
 app.post("/api/chat", async (req, res) => {
